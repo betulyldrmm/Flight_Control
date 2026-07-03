@@ -42,3 +42,23 @@ def monitor_altitude(master, duration=15):
         if msg:
             print(f"z: {msg.z:.2f}")
         time.sleep(0.5)
+
+def send_velocity_command(master, vx, vy, vz):
+    """
+    Body-frame velocity komutu gonder.
+    vx: ileri/geri (m/s)
+    vy: sag/sol (m/s)
+    vz: asagi/yukari (m/s) -- NOT: pozitif z = asagi (NED koordinat sistemi)
+    
+    Bu fonksiyon, PID kontrolcunun ciktisini gercekten drone'a iletecek yer.
+    """
+    master.mav.set_position_target_local_ned_send(
+        0,
+        master.target_system, master.target_component,
+        mavutil.mavlink.MAV_FRAME_BODY_OFFSET_NED,
+        0b0000111111000111,  # sadece velocity kullan
+        0, 0, 0,
+        vx, vy, vz,
+        0, 0, 0,
+        0, 0
+    )
