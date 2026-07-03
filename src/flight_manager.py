@@ -62,3 +62,23 @@ def send_velocity_command(master, vx, vy, vz):
         0, 0, 0,
         0, 0
     )
+
+def send_attitude_target(master, roll_rate, pitch_rate, yaw_rate, thrust=0.5):
+    """
+    KTR raporuna uygun SET_ATTITUDE_TARGET komutu gonderir.
+    type_mask = 0b00000111 -> roll_rate, pitch_rate, yaw_rate aktif, quaternion yok saylir.
+    
+    roll_rate, pitch_rate, yaw_rate: rad/s cinsinden aci hizlari (PID ciktisi)
+    thrust: 0.0 - 1.0 arasi normalize itki degeri
+    """
+    master.mav.set_attitude_target_send(
+        0,                                  # time_boot_ms (otomatik)
+        master.target_system,
+        master.target_component,
+        0b00000111,                        # type_mask: sadece rate'ler aktif
+        [1, 0, 0, 0],                       # quaternion (kullanilmiyor, dummy deger)
+        roll_rate,
+        pitch_rate,
+        yaw_rate,
+        thrust
+    )
