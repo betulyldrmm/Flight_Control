@@ -13,7 +13,7 @@ def make_data(x_err, y_err, area=0.0075):
 
 def test_deadband_komut_uretmez():
     c = TrackingController()
-    out = c.compute(make_data(0.10, -0.15), dt=0.033)
+    out = c.compute(make_data(0.05, -0.08), dt=0.033)   # 0.10 bandinin icinde
     assert out.in_deadband is True
     assert out.yaw_rate == 0.0
     assert out.pitch == 0.0
@@ -49,8 +49,21 @@ def test_hedef_kucukse_yaklas():
     assert out.throttle > 0
 
 
-def test_hedef_kayipsa_sifir_komut():
-    c = TrackingController()
+def test_kisa_kayipta_coasting():
+    """Hedef bir anligina kaybolursa komut aniden sifirlanmaz."""
+    c = TrackingController(coast_frames=15)
+    c.compute(make_data(0.8, 0.0), dt=0.033)     # once komut uret
     lost = TrackingData.lost(timestamp=1.0)
-    out = c.compute(lost, dt=0.033)
+    out = c.compute(lost, dt=0.033)              # ilk kayip frame
+    assert out.coasting is True
+    assert out.yaw_rate != 0.0
+
+
+def test_uzun_kayipta_sifir_komut():
+    """coast_frames asilinca tum komutlar sifirlanir."""
+    c = TrackingController(coast_frames=15)
+    c.compute(make_data(0.8, 0.0), dt=0.033)
+    lost = TrackingData.lost(timestamp=1.0)
+    for _ in range(16):
+        out = c.compute(lost, dt=0.033)
     assert out.as_tuple() == (0.0, 0.0, 0.0, 0.0)
