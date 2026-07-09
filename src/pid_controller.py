@@ -1,81 +1,148 @@
 """
-KTR Raporu Tablo 4 mantigina uygun, ancak normalize edilmis hataya
-gore YENIDEN OLCEKLENMIS Kp katsayilariyla calisan PID kontrolcu.
+Goruntu isleme/takip modulunden gelen normalize hata sinyallerini
+ucus komutlarina ceviren PID kontrolcu.
 
-TUNING NOTU: Orijinal KTR Kp degerleri piksel-bazli hata icin tasarlanmisti.
-Hata normalize edilince (-1..1 araligina), Kp'lerin de output_max'a yakin
-olacak sekilde yeniden olceklenmesi gerekti. Oran korunarak (Yaw > Pitch >
-Throttle > Roll) yeniden hesaplandi.
+TASARIM NOTLARI:
+
+1. Hata hesabi burada YAPILMAZ. tracking_interface.TrackingData zaten
+   x_error, y_error, bbox_area uretir. PID sadece hazir hata alir.
+
+2. DEADBAND: Yarisma Bilgilendirme Dokumani, "Takip icin hedef dronu
+   goruntu merkezinde tutma sarti bulunmamaktadir" diyor. Basari kriteri
+   bbox boyutu ve IoU. Bu yuzden hedef kadrajin orta bolgesindeyken
+   komut uretilmez -> gereksiz salinim ve enerji tuketimi onlenir.
+
+3. ROLL ayri bir PID degil. Yaw ile ayni hataya (x_error) bagli iki
+   bagimsiz kontrolcu birbirini pompalar ve salinim uretir. Roll,
+   yaw_rate'ten turetilir (koordineli donus).
+
+4. Cikis limitleri KTR Raporu Tablo 4'ten alinmistir.
 """
+
 import time
+from dataclasses import dataclass
+from typing import Optional
+
+# KTR Tablo 4: cikis araliklari
+YAW_LIMITS = (-0.5, 0.5)
+PITCH_LIMITS = (-0.4, 0.4)
+ROLL_LIMITS = (-0.3, 0.3)
+THROTTLE_LIMITS = (-0.3, 0.3)
 
 
 class PID:
-    def __init__(self, Kp, Ki, Kd, output_min, output_max):
-        self.Kp = Kp
-        self.Ki = Ki
-        self.Kd = Kd
+    def __init__(self, Kp: float, Ki: float, Kd: float,
+                 output_min: float, output_max: float,
+                 integral_limit: float = 2.0):
+        self.Kp, self.Ki, self.Kd = Kp, Ki, Kd
         self.output_min = output_min
         self.output_max = output_max
-        self.integral = 0
-        self.last_error = 0
-        self.last_time = None
+        self.integral_limit = integral_limit
+        self.reset()
 
-    def update(self, error):
-        now = time.time()
-        dt = 0.1 if self.last_time is None else max(now - self.last_time, 0.01)
+    def update(self, error: float, dt: Optional[float] = None) -> float:
+        """dt verilmezse gercek zamandan hesaplanir; verilirse simulasyon adimi."""
+        if dt is None:
+            now = time.time()
+            dt = 0.033 if self.last_time is None else max(now - self.last_time, 0.001)
+            self.last_time = now
 
         self.integral += error * dt
-        self.integral = max(-2.0, min(2.0, self.integral))  # windup onleme
+        self.integral = max(-self.integral_limit,
+                            min(self.integral_limit, self.integral))
 
-        derivative = (error - self.last_error) / dt
-        output = (self.Kp * error) + (self.Ki * self.integral) + (self.Kd * derivative)
-        output = max(self.output_min, min(self.output_max, output))
+        derivative = (error - self.last_error) / dt if dt > 0 else 0.0
+
+        raw = self.Kp * error + self.Ki * self.integral + self.Kd * derivative
+        output = max(self.output_min, min(self.output_max, raw))
+
+        # Anti-windup: cikis doygunlugundaysa integrali buyutme
+        if raw != output:
+            self.integral -= error * dt
 
         self.last_error = error
-        self.last_time = now
         return output
 
     def reset(self):
-        self.integral = 0
-        self.last_error = 0
+        self.integral = 0.0
+        self.last_error = 0.0
         self.last_time = None
 
 
+@dataclass
+class ControlOutput:
+    roll: float
+    pitch: float
+    yaw_rate: float
+    throttle: float
+    in_deadband: bool = False
+
+    def as_tuple(self):
+        return (self.roll, self.pitch, self.yaw_rate, self.throttle)
+
+
+ZERO_OUTPUT = ControlOutput(0.0, 0.0, 0.0, 0.0, in_deadband=True)
+
+
 class TrackingController:
-    def __init__(self, cam_width=640, cam_height=480, reference_area=5000):
-        self.frame_center_x = cam_width / 2
-        self.frame_center_y = cam_height / 2
-        self.half_width = cam_width / 2
-        self.half_height = cam_height / 2
+    """
+    TrackingData -> (roll, pitch, yaw_rate, throttle)
+
+    reference_area: hedefin kaplamasi istenen normalize bbox alani.
+        Sartname minimumu 4096 px. 1280x720 karede 4096/921600 = 0.00444.
+        Guvenlik payiyla varsayilan 0.0075 (~83x83 px).
+    """
+
+    def __init__(self,
+                 reference_area: float = 0.0075,
+                 deadband_xy: float = 0.20,
+                 deadband_area: float = 0.15,
+                 roll_coupling: float = 0.40):
         self.reference_area = reference_area
+        self.deadband_xy = deadband_xy
+        self.deadband_area = deadband_area
+        self.roll_coupling = roll_coupling
 
-        # YENIDEN OLCEKLENMIS Kp: normalize hata (max ±1) icin, output_max'a
-        # yakin bir maksimum tepki uretecek sekilde ayarlandi. KTR'deki
-        # oransal iliski (Yaw en agresif, Roll en yumusak) korundu.
-        self.pid_yaw = PID(Kp=0.45, Ki=0.02, Kd=0.08, output_min=-0.5, output_max=0.5)
-        self.pid_pitch = PID(Kp=0.35, Ki=0.015, Kd=0.06, output_min=-0.4, output_max=0.4)
-        self.pid_roll = PID(Kp=0.22, Ki=0.01, Kd=0.04, output_min=-0.3, output_max=0.3)
-        self.pid_throttle = PID(Kp=0.28, Ki=0.01, Kd=0.05, output_min=-0.3, output_max=0.3)
+        self.pid_yaw = PID(0.45, 0.02, 0.08, *YAW_LIMITS)
+        self.pid_pitch = PID(0.35, 0.015, 0.06, *PITCH_LIMITS)
+        self.pid_throttle = PID(0.28, 0.01, 0.05, *THROTTLE_LIMITS)
 
-    def compute(self, bbox_x, bbox_y, bbox_w, bbox_h):
-        x_merkez = bbox_x + bbox_w / 2
-        y_merkez = bbox_y + bbox_h / 2
-        area = bbox_w * bbox_h
+    @staticmethod
+    def _apply_deadband(error: float, band: float) -> float:
+        """Olu bant disindaki hatayi yeniden olcekler (surekli gecis)."""
+        if abs(error) <= band:
+            return 0.0
+        sign = 1.0 if error > 0 else -1.0
+        return sign * (abs(error) - band) / (1.0 - band)
 
-        x_error = (x_merkez - self.frame_center_x) / self.half_width
-        y_error = (y_merkez - self.frame_center_y) / self.half_height
-        area_error = (self.reference_area - area) / self.reference_area
+    def compute(self, data, dt: Optional[float] = None) -> ControlOutput:
+        """data: TrackingData nesnesi."""
+        if not data.is_valid():
+            self.reset()
+            return ZERO_OUTPUT
 
-        yaw_rate = self.pid_yaw.update(x_error)
-        pitch_rate = self.pid_pitch.update(y_error)
-        roll_rate = self.pid_roll.update(x_error)
-        thrust_adj = self.pid_throttle.update(area_error)
+        x_err = self._apply_deadband(data.x_error, self.deadband_xy)
+        y_err = self._apply_deadband(data.y_error, self.deadband_xy)
 
-        return roll_rate, pitch_rate, yaw_rate, thrust_adj
+        # Hedef kucukse pozitif (yaklas), buyukse negatif (uzaklas)
+        area_raw = (self.reference_area - data.bbox_area) / self.reference_area
+        area_err = self._apply_deadband(area_raw, self.deadband_area)
+
+        in_db = (x_err == 0.0 and y_err == 0.0 and area_err == 0.0)
+
+        yaw_rate = self.pid_yaw.update(x_err, dt)
+        pitch = self.pid_pitch.update(y_err, dt)
+        throttle = self.pid_throttle.update(area_err, dt)
+
+        # Koordineli donus: yaw yonunde hafif yatis
+        roll = max(ROLL_LIMITS[0], min(ROLL_LIMITS[1],
+                                       self.roll_coupling * yaw_rate))
+
+        return ControlOutput(roll=roll, pitch=pitch,
+                             yaw_rate=yaw_rate, throttle=throttle,
+                             in_deadband=in_db)
 
     def reset(self):
         self.pid_yaw.reset()
         self.pid_pitch.reset()
-        self.pid_roll.reset()
         self.pid_throttle.reset()
