@@ -59,3 +59,16 @@ def test_yetersiz_hiz_yakalanir(tmp_path):
         lg.log(d, None, t_ms=i * 250)
     lg.close()
     assert lg.rate_ok(min_hz=5) is False
+    
+def test_kismi_son_saniye_yok_sayilir(tmp_path):
+    """Son saniye kismi ise loglama hizi yine yeterli sayilmali."""
+    lg = FlightLogger(str(tmp_path)).start(t0=0.0)
+    d = TrackingData.from_boxes((100, 200, 80, 80), t=0.0)
+    for i in range(30):                    # tam 1. saniye: 30 kayit
+        lg.log(d, None, t_ms=int(i * 1000 / 30))
+    for i in range(30):                    # tam 2. saniye
+        lg.log(d, None, t_ms=1000 + int(i * 1000 / 30))
+    for i in range(2):                     # 3. saniye: sadece 2 kayit (kismi)
+        lg.log(d, None, t_ms=2000 + i * 33)
+    lg.close()
+    assert lg.rate_ok(min_hz=5) is True

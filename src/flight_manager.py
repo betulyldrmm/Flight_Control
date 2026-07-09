@@ -63,24 +63,32 @@ def set_mode(master, mode_name: str, timeout: float = 5.0) -> bool:
     print(f"Mod degisimi dogrulanamadi: {mode_name}")
     return False
 
-
-def arm(master, timeout: float = 5.0) -> bool:
-    """Araci arm et, HEARTBEAT ile dogrula."""
+def arm(master, timeout: float = 8.0) -> bool:
+    """Araci arm et. COMMAND_ACK ve HEARTBEAT ile dogrula."""
     master.mav.command_long_send(
         master.target_system, master.target_component,
         mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
         0, 1, 0, 0, 0, 0, 0, 0,
     )
 
+    ack = master.recv_match(type="COMMAND_ACK", blocking=True, timeout=3)
+    if ack and ack.command == mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM:
+        if ack.result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+            print(f"Arm reddedildi (result={ack.result})")
+            return False
+
+    # HEARTBEAT ile dogrula
     t0 = time.time()
     while time.time() - t0 < timeout:
         hb = master.recv_match(type="HEARTBEAT", blocking=True, timeout=1)
         if hb and (hb.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED):
             print("Arm edildi.")
             return True
-    print("Arm dogrulanamadi.")
+
+    print("Arm dogrulanamadi (ACK geldi ama heartbeat teyit etmedi).")
     return False
 
+   
 
 def disarm(master):
     master.mav.command_long_send(

@@ -197,15 +197,22 @@ class FlightLogger:
     # -- dogrulama -------------------------------------------------------
 
     def rate_ok(self, min_hz: int = 5) -> bool:
-        """Her tam saniye diliminde en az min_hz kayit var mi?"""
+        """
+        Her tam saniye diliminde en az min_hz kayit var mi?
+        Ilk ve son dilim kismi olabilecegi icin haric tutulur.
+        """
         if not self._timestamps_ms:
             return False
+
         buckets = {}
         for t in self._timestamps_ms:
-            sec = t // 1000
-            buckets[sec] = buckets.get(sec, 0) + 1
-        return all(c >= min_hz for c in buckets.values())
+            buckets[t // 1000] = buckets.get(t // 1000, 0) + 1
 
+        keys = sorted(buckets)
+        if len(keys) <= 2:
+            return all(buckets[k] >= min_hz for k in keys)
+        return all(buckets[k] >= min_hz for k in keys[1:-1])
+    
     def rate_report(self, min_hz: int = 5) -> str:
         if not self._timestamps_ms:
             return "Hic kayit yok."
