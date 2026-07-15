@@ -72,12 +72,24 @@ class FailsafeMonitor:
     # -- guncelleme ------------------------------------------------------
 
     def poll_heartbeat(self) -> bool:
-        """FC'den gelen heartbeat'i kontrol eder (bloklamaz)."""
-        msg = self.master.recv_match(type="HEARTBEAT", blocking=False)
-        if msg:
+        """
+        FC baglantisinin canli olup olmadigini kontrol eder (bloklamaz).
+
+        NOT: Sadece HEARTBEAT'e bakmak kirilgandir; ana dongudeki diger
+        recv_match cagrilari (orn. get_attitude) heartbeat mesajini
+        tuketebilir. FC'den gelen HERHANGI bir mesaj baglantinin canli
+        oldugunun kanitidir.
+        """
+        alive = False
+        while True:
+            msg = self.master.recv_match(blocking=False)
+            if msg is None:
+                break
+            if msg.get_type() != "BAD_DATA":
+                alive = True
+        if alive:
             self.last_heartbeat = time.time()
-            return True
-        return False
+        return alive
 
     def update(self, data_received: bool, target_detected: bool,
                now: Optional[float] = None) -> FailsafeState:

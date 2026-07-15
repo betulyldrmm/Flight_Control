@@ -32,7 +32,7 @@ HEADER = [
     "x_error", "y_error", "bbox_area",
     "confidence",
     "roll_cmd", "pitch_cmd", "yaw_cmd", "throttle_cmd",
-    "in_deadband", "coasting",
+    "in_deadband", "coasting", "searching",
     "flight_mode",
     "failsafe_active",
 ]
@@ -68,6 +68,7 @@ class LogRow:
     throttle_cmd: float = 0.0
     in_deadband: bool = False
     coasting: bool = False
+    searching: bool = False
     flight_mode: str = ""
     failsafe_active: bool = False
 
@@ -81,7 +82,7 @@ class LogRow:
             _fmt(self.confidence, 3),
             _fmt(self.roll_cmd), _fmt(self.pitch_cmd),
             _fmt(self.yaw_cmd), _fmt(self.throttle_cmd),
-            _fmt(self.in_deadband), _fmt(self.coasting),
+            _fmt(self.in_deadband), _fmt(self.coasting), _fmt(self.searching),
             self.flight_mode, _fmt(self.failsafe_active),
         ]
 
@@ -107,6 +108,7 @@ class FlightLogger:
         self._t0: Optional[float] = None
         self.rows = 0
         self._timestamps_ms = []
+        self._last_flush = 0.0
 
     # -- yasam dongusu ---------------------------------------------------
 
@@ -184,12 +186,19 @@ class FlightLogger:
             throttle_cmd=out.throttle if out else 0.0,
             in_deadband=out.in_deadband if out else False,
             coasting=getattr(out, "coasting", False) if out else False,
+            searching=getattr(out, "searching", False) if out else False,
             flight_mode=flight_mode,
             failsafe_active=failsafe_active,
         )
 
         self._w.writerow(row.to_list())
-        self._f.flush()          # kirim durumunda veri kaybetme
+        # Her satirda flush diske takilip donguyu durdurabiliyor
+        # (Windows'ta 2+ sn'lik duraklamalar gozlendi). 0.5 sn'de bir
+        # flush, kirim durumunda en fazla yarim saniyelik veri kaybi.
+        now = time.time()
+        if now - self._last_flush > 0.5:
+            self._f.flush()
+            self._last_flush = now
         self.rows += 1
         self._timestamps_ms.append(t_ms)
         return row

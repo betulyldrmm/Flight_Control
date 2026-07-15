@@ -37,12 +37,36 @@ def connect(address: str = SITL_TCP, baud: int = PIXHAWK_BAUD,
     return master
 
 
+def send_gcs_heartbeat(master):
+    """
+    Jetson -> FC heartbeat. KTR'deki GCS Failsafe tasarimi
+    (FS_GCS_ENABLE=1) bizim tarafin FC'ye duzenli heartbeat
+    gondermesini gerektirir; pymavlink bunu otomatik YAPMAZ.
+    ~1 Hz cagrilmali, yoksa FC baglantiyi kopmus sayar ve LAND'e gecer.
+    """
+    master.mav.heartbeat_send(
+        mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
+        mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0)
+
+
 def wait_ready(master, timeout: float = 30.0) -> bool:
-    """EKF ve pre-arm kontrolleri tamamlanana kadar bekle."""
+    """
+    Pre-arm kontrolleri gecene kadar bekle.
+    SYS_STATUS.onboard_control_sensors_health icindeki PREARM bitine
+    bakar (ArduPilot tum pre-arm kontrolleri gecince set eder).
+    Beklerken GCS heartbeat gondermeye devam eder.
+    """
     import time
+    prearm_bit = getattr(mavutil.mavlink,
+                         "MAV_SYS_STATUS_PREARM_CHECK", 0x10000000)
     t0 = time.time()
+    last_hb = 0.0
     while time.time() - t0 < timeout:
+        if time.time() - last_hb > 1.0:
+            send_gcs_heartbeat(master)
+            last_hb = time.time()
         msg = master.recv_match(type="SYS_STATUS", blocking=True, timeout=2)
-        if msg:
+        if msg and (msg.onboard_control_sensors_health & prearm_bit):
+            print("Pre-arm kontrolleri gecildi.")
             return True
     return False

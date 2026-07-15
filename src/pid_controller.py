@@ -23,7 +23,13 @@ TASARIM NOTLARI:
    Son komut sonumlenerek korunur (coast_frames boyunca). Bu, KTR'deki
    "Kalman tahmini ile kisa sureli devam" davranisinin basit karsiligi.
 
-5. Cikis limitleri KTR Raporu Tablo 4'ten alinmistir.
+5. ARAMA (SEARCH): Coasting suresi de asilirsa, hedefin kadrajdan
+   ciktigi yone dogru yavas bir yaw taramasi yapilir. Pitch/roll/throttle
+   sifir tutulur (yer degistirme yok, sadece donus). Failsafe katmani
+   DATA_TIMEOUT durumunda aramayi iptal eder (main.py) ve 15 sn sonra
+   LAND tetiklenir; arama bu sureyle dogal olarak sinirlidir.
+
+6. Cikis limitleri KTR Raporu Tablo 4'ten alinmistir.
 """
 
 import time
@@ -84,6 +90,7 @@ class ControlOutput:
     throttle: float
     in_deadband: bool = False
     coasting: bool = False
+    searching: bool = False
 
     def as_tuple(self):
         return (self.roll, self.pitch, self.yaw_rate, self.throttle)
@@ -108,7 +115,8 @@ class TrackingController:
                  deadband_xy: float = 0.10,
                  deadband_area: float = 0.0,
                  roll_coupling: float = 0.40,
-                 coast_frames: int = 15):
+                 coast_frames: int = 15,
+                 search_yaw_rate: float = 0.12):
         if reference_area is None:
             if cam is None:
                 reference_area = 0.0075
@@ -122,6 +130,8 @@ class TrackingController:
         self.deadband_area = deadband_area
         self.roll_coupling = roll_coupling
         self.coast_frames = coast_frames
+        self.search_yaw_rate = search_yaw_rate
+        self._search_dir = 1.0   # hedefin son gorulme yonu (+1 sag, -1 sol)
 
         self.pid_yaw = PID(0.45, 0.02, 0.08, *YAW_LIMITS)
         self.pid_pitch = PID(0.50, 0.02, 0.10, *PITCH_LIMITS)
@@ -156,10 +166,26 @@ class TrackingController:
                     coasting=True,
                 )
 
-            self.reset()
-            return ZERO_OUTPUT
+            # Coasting bitti: PID gecmisini temizle (bir kez), aramaya gec
+            if self.lost_frames == self.coast_frames + 1:
+                self.pid_yaw.reset()
+                self.pid_pitch.reset()
+                self.pid_throttle.reset()
+                self._last = ControlOutput(0.0, 0.0, 0.0, 0.0)
+
+            # Arama: son gorulme yonune yavas yaw taramasi
+            return ControlOutput(
+                roll=0.0, pitch=0.0,
+                yaw_rate=self._search_dir * self.search_yaw_rate,
+                throttle=0.0,
+                searching=True,
+            )
 
         self.lost_frames = 0
+
+        # Arama yonu icin hedefin kadraj icindeki tarafini hatirla
+        if abs(data.x_error) > 0.05:
+            self._search_dir = 1.0 if data.x_error > 0 else -1.0
 
         x_err = self._apply_deadband(data.x_error, self.deadband_xy)
         y_err = self._apply_deadband(data.y_error, self.deadband_xy)

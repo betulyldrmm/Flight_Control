@@ -17,7 +17,7 @@ import math
 import random
 from dataclasses import dataclass
 from typing import Iterator, Optional, Tuple
-
+from src.camera import CameraModel, DEFAULT_CAM, MIN_BBOX_SIDE_PX
 Box = Tuple[float, float, float, float]  # (x, y, w, h)
 
 MIN_BBOX_SIDE_PX = 64.0  # sartname: 64x64 minimum tespit alani

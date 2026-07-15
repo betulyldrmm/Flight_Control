@@ -28,6 +28,8 @@ import math
 import time
 from pymavlink import mavutil
 
+from src.connection import send_gcs_heartbeat
+
 # Rate olcekleme: normalize cikis -> rad/s
 MAX_ROLL_RATE = math.radians(90.0)    # rad/s
 MAX_PITCH_RATE = math.radians(90.0)
@@ -111,6 +113,39 @@ def takeoff(master, altitude: float = 5.0):
 
 def land(master):
     set_mode(master, "LAND")
+
+
+def wait_landed(master, timeout: float = 90.0) -> bool:
+    """
+    LAND komutu sonrasi inisi izler: disarm gorulene kadar bekler.
+    Bu sirada GCS heartbeat gondermeye devam eder (FS_GCS_ENABLE=1
+    varken inis ortasinda ikinci bir failsafe tetiklenmesin diye).
+    """
+    print("Inis izleniyor...")
+    t0 = time.time()
+    last_hb = 0.0
+    last_alt_print = 0.0
+
+    while time.time() - t0 < timeout:
+        now = time.time()
+        if now - last_hb > 1.0:
+            send_gcs_heartbeat(master)
+            last_hb = now
+
+        hb = master.recv_match(type="HEARTBEAT", blocking=True, timeout=1)
+        if hb and not (hb.base_mode &
+                       mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED):
+            print("Inis tamamlandi (disarm).")
+            return True
+
+        if now - last_alt_print > 2.0:
+            alt = get_altitude(master, timeout=0.2)
+            if alt is not None:
+                print(f"  inis... irtifa {alt:.1f} m")
+            last_alt_print = now
+
+    print(f"UYARI: {timeout:.0f} sn icinde disarm gorulmedi.")
+    return False
 
 
 def send_attitude_target(master,
