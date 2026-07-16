@@ -142,12 +142,16 @@ class FlightLogger:
         return int(round((now - self._t0) * 1000.0))
 
     @staticmethod
-    def overlay_text(t_ms: int) -> str:
+    def overlay_text(t_ms: int, frame_id: int = 0, otonom: int = 1) -> str:
         """
-        Goruntunun sag ust kosesine gomulecek zaman damgasi.
-        Format: SS.mmm (saniye.milisaniye)
+        Goruntunun sag ust kosesine gomulecek bindirme metni.
+        Resmi format Ek Dokumani'na (V1.1, Bolum 6) uygun:
+        zaman_damgasi_ms + kare_no + OTONOM zorunlu.
+        Asil uygulama src/resmi_kayit.bindirme_metni'dir; burada
+        yalnizca ayni standarda yonlendirilir.
         """
-        return f"{t_ms // 1000}.{t_ms % 1000:03d}"
+        from src.resmi_kayit import bindirme_metni
+        return bindirme_metni(frame_id, t_ms, otonom)
 
     # -- kayit -----------------------------------------------------------
 

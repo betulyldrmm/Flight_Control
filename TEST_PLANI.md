@@ -50,7 +50,8 @@ Failsafe senaryoları (SITL'de üçü de denenecek):
 ArduPilot parametreleri (uçuştan önce kontrol listesi):
 | Parametre | Değer | Amaç |
 |---|---|---|
-| FS_GCS_ENABLE | 1 | Jetson heartbeat kesilince LAND |
+| FS_GCS_ENABLE | 5 | Jetson heartbeat kesilince LAND (1 degil! 1=RTL, GPS'siz calismaz) |
+| SYSID_MYGCS (veya MAV_GCS_SYSID) | 254 | GCS failsafe SADECE Jetson'i izlesin; Mission Planner (255) baglansa bile maskelenmesin. Kod tarafi: connection.GCS_SYSID=254 |
 | BATT_FS_LOW_ACT | 2 (LAND) | Batarya failsafe |
 | FS_THR_ENABLE | 1 | RC kumanda failsafe |
 | GUID_TIMEOUT | 3 | Komut akışı kesilme davranışı |
@@ -85,5 +86,19 @@ Emniyet kuralları:
   hedef yukarı kaçarsa bulamayabilir (pitch taraması yok — bilinçli tercih, riskli).
 - `wait_ready` pre-arm bitine bakar; GPS'siz konfigürasyonda bazı kontroller
   kapatılmış olmalı (ARMING_CHECK), yoksa hep uyarı verir.
-- Loglama formatı komiteden gelecek ek dokümanla değişebilir — CSV kolonları
-  tek yerden (logger.HEADER) yönetiliyor, uyarlaması kolay.
+- ~~Loglama formatı komiteden gelecek ek dokümanla değişebilir~~ → GELDİ
+  (V1.1 Taslak, 01.07.2026). Resmi format `src/resmi_kayit.py`'de kodlandı:
+  `tespit_kaydi.csv` + `goruntu/` + bindirme standardı. logger.py İÇ log
+  olarak kalır, hakem teslimi DEĞİLDİR.
+
+## Resmi teslim paketi (YENİ — Kayıt Formatı Ek Dokümanı V1.1)
+
+- Görüntüleri diske kaydeden taraf (görüntü işleme/Sercan) `resmi_kayit.py`
+  kullanmalı: dosya adı `goruntu_adi()`, sağ üst bindirme `bindirme_metni()`,
+  her kareye CSV satırı `ResmiKayit.kaydet()` — üçü aynı kare_no/zaman'ı taşımalı.
+- Paket: `TAKIM_<ISIM>_DENEME_<NO>.zip` → içinde `goruntu/` + `tespit_kaydi.csv`.
+- Teslimden önce MUTLAKA: `python tests/paket_dogrula.py <paket_klasoru>`
+  (Ek-C kontrol listesinin tamamını otomatik denetler; hata varsa paket
+  değerlendirme dışı kalabilirdi).
+- DİKKAT: zaman sıfırı = otonom moda geçiş anı; kare_no 0'dan başlar.
+- Bu doküman TASLAK — nihai sürüm çıkınca `resmi_kayit.py` ile diff alın.
