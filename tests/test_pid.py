@@ -59,11 +59,14 @@ def test_kisa_kayipta_coasting():
     assert out.yaw_rate != 0.0
 
 
-def test_uzun_kayipta_sifir_komut():
-    """coast_frames asilinca tum komutlar sifirlanir."""
+def test_uzun_kayipta_arama_modu():
+    """coast_frames asilinca arama moduna gecilir: sadece yaw taramasi,
+    yer degistirme komutlari (roll/pitch/throttle) sifir."""
     c = TrackingController(coast_frames=15)
     c.compute(make_data(0.8, 0.0), dt=0.033)
     lost = TrackingData.lost(timestamp=1.0)
     for _ in range(16):
         out = c.compute(lost, dt=0.033)
-    assert out.as_tuple() == (0.0, 0.0, 0.0, 0.0)
+    assert out.searching and not out.coasting
+    assert (out.roll, out.pitch, out.throttle) == (0.0, 0.0, 0.0)
+    assert out.yaw_rate != 0.0        # son gorulme yonune yavas tarama

@@ -11,9 +11,15 @@ from pymavlink import mavutil
 SITL_TCP = "tcp:127.0.0.1:5760"
 PIXHAWK_BAUD = 921600            # KTR: gecikmeyi dusuk tutmak icin
 
+# Bizim GCS sistem kimligimiz. Varsayilan 255, MAVProxy/MissionPlanner
+# ile cakisir; o zaman FC bizim heartbeat'imiz kesilse bile onlarinkini
+# sayar ve GCS failsafe HIC tetiklenmez. FC tarafinda SYSID_MYGCS
+# (yeni surumlerde MAV_GCS_SYSID) = 254 ayarlanmali.
+GCS_SYSID = 254
+
 
 def connect(address: str = SITL_TCP, baud: int = PIXHAWK_BAUD,
-            timeout: float = 15.0):
+            timeout: float = 15.0, source_system: int = GCS_SYSID):
     """
     SITL veya gercek Pixhawk'a baglan, heartbeat bekle.
 
@@ -21,12 +27,14 @@ def connect(address: str = SITL_TCP, baud: int = PIXHAWK_BAUD,
         SITL:     "tcp:127.0.0.1:5760"
         Pixhawk:  "/dev/ttyTHS1"  veya  "COM5"
     """
-    print(f"Baglaniliyor: {address}")
+    print(f"Baglaniliyor: {address} (GCS sysid={source_system})")
 
     if address.startswith(("tcp:", "udp:", "udpin:", "udpout:")):
-        master = mavutil.mavlink_connection(address)
+        master = mavutil.mavlink_connection(address,
+                                            source_system=source_system)
     else:
-        master = mavutil.mavlink_connection(address, baud=baud)
+        master = mavutil.mavlink_connection(address, baud=baud,
+                                            source_system=source_system)
 
     hb = master.wait_heartbeat(timeout=timeout)
     if hb is None:

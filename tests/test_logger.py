@@ -29,9 +29,13 @@ def test_zaman_otonom_moddan_baslar(tmp_path):
 
 
 def test_overlay_formati():
-    assert FlightLogger.overlay_text(0) == "0.000"
-    assert FlightLogger.overlay_text(2500) == "2.500"
-    assert FlightLogger.overlay_text(65042) == "65.042"
+    # Resmi kayit formati (Ek Dokuman V1.1): zaman_damgasi_ms + kare_no + OTONOM
+    metin = FlightLogger.overlay_text(2500, frame_id=7, otonom=1)
+    assert metin == (
+        "zaman_damgasi_ms: 000002500\n"
+        "kare_no: 000007\n"
+        "OTONOM: 1"
+    )
 
 
 def test_hedef_kayip_satiri(tmp_path):
