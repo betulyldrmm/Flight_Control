@@ -48,7 +48,7 @@ def connect(address: str = SITL_TCP, baud: int = PIXHAWK_BAUD,
 def send_gcs_heartbeat(master):
     """
     Jetson -> FC heartbeat. KTR'deki GCS Failsafe tasarimi
-    (FS_GCS_ENABLE=1) bizim tarafin FC'ye duzenli heartbeat
+    (FS_GCS_ENABLE=5) bizim tarafin FC'ye duzenli heartbeat
     gondermesini gerektirir; pymavlink bunu otomatik YAPMAZ.
     ~1 Hz cagrilmali, yoksa FC baglantiyi kopmus sayar ve LAND'e gecer.
     """

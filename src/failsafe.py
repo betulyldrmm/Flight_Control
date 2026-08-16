@@ -16,7 +16,7 @@ UC AYRI KATMAN:
 
 NOT: Bu katman yardimci bir guvenlik agidir. ASIL guvenlik ArduPilot'un
 kendi failsafe parametreleridir:
-    FS_GCS_ENABLE = 1       (GCS heartbeat kesilince LAND)
+    FS_GCS_ENABLE = 5       (GCS heartbeat kesilince LAND; 1 DEGIL, 1=RTL GPS'siz calismaz)
     FS_OPTIONS              (davranis secimi)
     BATT_FS_LOW_ACT         (batarya failsafe)
 KTR: "MAVLink heartbeat sinyali kesildiginde aracin otomatik olarak

@@ -24,7 +24,8 @@ import sys
 import time
 from typing import Iterator, Optional
 
-from src.camera import CAM_720P_40, CameraModel
+from src.camera import (CAM_720P_40, CAM_720P_50, CAM_720P_70,
+                        CAM_1080P_50, CameraModel)
 from src.connection import connect, send_gcs_heartbeat, wait_ready
 from src import flight_manager as fm
 from src.failsafe import FailsafeMonitor, FailsafeState
@@ -35,8 +36,18 @@ from src.tracking_interface import TrackingData
 FPS = 30
 DT = 1.0 / FPS
 
+# Kalkis: sabit yuksek thrust yerine hover uzerine kucuk bir tirmanis
+# deltasi (K2). Ilk ~2 sn yumusak rampa. Bench'te MOT_THST_HOVER'a gore
+# HOVER_THRUST'i ayarladiktan sonra bu delta guvenli tirmanis verir.
+TAKEOFF_CLIMB_DELTA = 0.15   # hover + bu kadar (0.70 sabit DEGIL)
+TAKEOFF_RAMP_S = 2.0         # deltaya ulasma suresi (sn)
+
 # Secilecek lens. Grup karari bekleniyor; 70 FOV sartname kriterini saglamiyor.
-# bkz. tests/camera_range_analysis.py
+# bkz. tests/camera_range_analysis.py. Bench'te --cam ile gercek donanima gore sec.
+CAMERAS = {
+    "720p40": CAM_720P_40, "720p50": CAM_720P_50,
+    "720p70": CAM_720P_70, "1080p50": CAM_1080P_50,
+}
 CAM: CameraModel = CAM_720P_40
 
 _running = True
@@ -146,7 +157,8 @@ TARGETS = {
 
 def run(source_name: str, target_name: str,
         takeoff_alt: float = 5.0, duration: Optional[float] = None,
-        desired_distance: float = 4.0, log_dir: str = "logs"):
+        desired_distance: float = 4.0, log_dir: str = "logs",
+        gain_scale: float = 1.0):
 
     print(f"Kamera: {CAM}")
     print(f"Hedef takip mesafesi: {desired_distance} m "
@@ -157,8 +169,13 @@ def run(source_name: str, target_name: str,
         master = connect(TARGETS[target_name])
         fm.request_streams(master, rate_hz=10)
         time.sleep(1)
+        # K2: FC'nin ogrendigi hover gazini goster (HOVER_THRUST'i hizalamak icin)
+        fm.read_hover_thrust(master)
 
-    ctrl = TrackingController(cam=CAM, desired_distance_m=desired_distance)
+    ctrl = TrackingController(cam=CAM, desired_distance_m=desired_distance,
+                              gain_scale=gain_scale)
+    if gain_scale != 1.0:
+        print(f"PID gain_scale = {gain_scale} (ilk ucus icin kisilmis)")
     logger = FlightLogger(log_dir).start()
     fs = FailsafeMonitor(master) if master else None
 
@@ -190,7 +207,10 @@ def run(source_name: str, target_name: str,
             if time.time() - last_hb > 1.0:
                 send_gcs_heartbeat(master)
                 last_hb = time.time()
-            fm.send_attitude_target(master, thrust=0.70)
+            # Hover + yumusak rampali tirmanis (sabit 0.70 degil)
+            ramp = min(1.0, (time.time() - t0) / TAKEOFF_RAMP_S)
+            climb_thrust = fm.HOVER_THRUST + ramp * TAKEOFF_CLIMB_DELTA
+            fm.send_attitude_target(master, thrust=climb_thrust)
             time.sleep(0.05)
         else:
             print(f"Kalkis suresi doldu (son irtifa: "
@@ -215,7 +235,7 @@ def run(source_name: str, target_name: str,
         if duration and time.time() - loop_t0 > duration:
             break
 
-        # GCS heartbeat (FS_GCS_ENABLE=1 icin zorunlu, ~1 Hz)
+        # GCS heartbeat (FS_GCS_ENABLE=5 icin zorunlu, ~1 Hz)
         if master and time.time() - last_hb > 1.0:
             send_gcs_heartbeat(master)
             last_hb = time.time()
@@ -278,6 +298,8 @@ def run(source_name: str, target_name: str,
             print("\nIniyor...")
             fm.land(master)
         fm.wait_landed(master)
+        # Guvenlik: inis sonrasi arm kaldiysa motorlari kesin durdur
+        fm.disarm(master)
 
     logger.close()
     print("\n" + logger.rate_report())
@@ -292,9 +314,22 @@ def main():
                    help="hedef takip mesafesi (m)")
     p.add_argument("--duration", type=float, default=None,
                    help="saniye; verilmezse Ctrl+C'ye kadar")
+    p.add_argument("--cam", choices=CAMERAS, default="720p40",
+                   help="kamera modeli (bench'te gercek donanima gore sec)")
+    p.add_argument("--hover", type=float, default=None,
+                   help="HOVER_THRUST override; MOT_THST_HOVER'a hizala (K2)")
+    p.add_argument("--gain-scale", type=float, default=1.0,
+                   help="tum PID kazanclarini olcekle; ilk ucusta 0.4-0.6 onerilir")
     args = p.parse_args()
 
-    run(args.source, args.target, args.alt, args.duration, args.dist)
+    global CAM
+    CAM = CAMERAS[args.cam]
+    if args.hover is not None:
+        fm.HOVER_THRUST = args.hover
+        print(f"HOVER_THRUST override: {args.hover}")
+
+    run(args.source, args.target, args.alt, args.duration, args.dist,
+        gain_scale=args.gain_scale)
 
 
 if __name__ == "__main__":

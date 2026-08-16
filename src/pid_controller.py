@@ -116,7 +116,8 @@ class TrackingController:
                  deadband_area: float = 0.0,
                  roll_coupling: float = 0.40,
                  coast_frames: int = 15,
-                 search_yaw_rate: float = 0.12):
+                 search_yaw_rate: float = 0.12,
+                 gain_scale: float = 1.0):
         if reference_area is None:
             if cam is None:
                 reference_area = 0.0075
@@ -133,9 +134,14 @@ class TrackingController:
         self.search_yaw_rate = search_yaw_rate
         self._search_dir = 1.0   # hedefin son gorulme yonu (+1 sag, -1 sol)
 
-        self.pid_yaw = PID(0.45, 0.02, 0.08, *YAW_LIMITS)
-        self.pid_pitch = PID(0.50, 0.02, 0.10, *PITCH_LIMITS)
-        self.pid_throttle = PID(0.60, 0.03, 0.12, *THROTTLE_LIMITS)
+        # gain_scale: ilk otonom ucusta tum kazanclari toplu kismak icin
+        # (orn. 0.5 = yari agresiflik). Kazanclar gercek dronda ayarlanacak;
+        # ilk denemede 1.0'in ALTINDAN baslamak guvenlidir.
+        self.gain_scale = gain_scale
+        gs = gain_scale
+        self.pid_yaw = PID(0.45 * gs, 0.02 * gs, 0.08 * gs, *YAW_LIMITS)
+        self.pid_pitch = PID(0.50 * gs, 0.02 * gs, 0.10 * gs, *PITCH_LIMITS)
+        self.pid_throttle = PID(0.60 * gs, 0.03 * gs, 0.12 * gs, *THROTTLE_LIMITS)
 
         self.lost_frames = 0
         self._last = ControlOutput(0.0, 0.0, 0.0, 0.0)

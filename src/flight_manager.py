@@ -41,6 +41,23 @@ THRUST_MIN, THRUST_MAX = 0.20, 0.80   # guvenlik siniri
 # Rate kontrolu: yalnizca quaternion yoksayilir
 TYPE_MASK_RATES_ONLY = 0b10000000
 
+# --- K1: EKSEN ESLEMESI (SITL'de DOGRULANACAK) --------------------------
+# Cok rotorlu + ileri bakan kamera fizigi:
+#   mesafe kontrolu  (area_error -> out.throttle) -> ileri/geri = PITCH
+#   dikey ortalama   (y_error    -> out.pitch)    -> yukari/asagi = THRUST
+# Bu, sim_loop.cmd_to_accel'in kullandigi DOGRU fiziksel eslemedir.
+# Onceki kod pitch<->throttle kanallarini ters bagliyordu: out.throttle
+# thrust'a (dikey), out.pitch pitch_rate'e (ileri) gidiyordu. Sim bu yuzden
+# geciyor ama gercek dronda mesafe kontrolu irtifayi surerdi (yukari flyaway).
+#
+# ISARETLER: asagidaki sabitler ilk mantikli tahmindir; SITL'de tek eksen
+# test edip (sitl_attitude_check.py mantigi) gerekirse -1.0 <-> +1.0 cevir.
+#   area_error>0 (hedef uzak)     -> ileri git  -> burun asagi = NEGATIF pitch rate
+#   y_error<0    (hedef yukarida) -> tirman      -> thrust ARTAR
+PITCH_CMD_SIGN = -1.0     # area_error -> pitch_rate isareti
+THRUST_CMD_SIGN = -1.0    # y_error (out.pitch) -> thrust isareti
+THRUST_AUTHORITY = 0.3    # out.pitch [-0.4,0.4] -> +-0.3 thrust yetkisi
+
 
 def set_mode(master, mode_name: str, timeout: float = 5.0) -> bool:
     """Verilen moda gec ve gecisi dogrula (orn. GUIDED, GUIDED_NOGPS)."""
@@ -118,7 +135,7 @@ def land(master):
 def wait_landed(master, timeout: float = 90.0) -> bool:
     """
     LAND komutu sonrasi inisi izler: disarm gorulene kadar bekler.
-    Bu sirada GCS heartbeat gondermeye devam eder (FS_GCS_ENABLE=1
+    Bu sirada GCS heartbeat gondermeye devam eder (FS_GCS_ENABLE=5
     varken inis ortasinda ikinci bir failsafe tetiklenmesin diye).
     """
     print("Inis izleniyor...")
@@ -172,20 +189,27 @@ def send_attitude_target(master,
     )
 
 
-def send_control_output(master, out):
+def send_control_output(master, out, hover: float = None):
     """
-    PID kontrolcusunun ControlOutput nesnesini SET_ATTITUDE_TARGET'a cevirir.
+    ControlOutput -> SET_ATTITUDE_TARGET.
 
-    out.roll, out.pitch  : normalize [-0.3, 0.4]
-    out.yaw_rate         : normalize [-0.5, 0.5]
-    out.throttle         : normalize [-0.3, 0.3], hover uzerine eklenir
+    EKSEN ESLEMESI (K1 - SITL'de dogrula, yukaridaki sabitlere bak):
+      out.yaw_rate (x_error)   -> yaw_rate    : yatay ortalama
+      out.throttle (area_err)  -> pitch_rate  : ileri/geri  -> MESAFE
+      out.pitch    (y_error)   -> thrust      : yukari/asagi -> DIKEY ortalama
+      out.roll     (yaw kupla) -> roll_rate   : koordineli donus
+
+    NOT: Isim benzerligine ragmen pitch<->throttle kanallarinin FIZIKSEL
+    karsiligi mesafe<->dikeydir (bkz. sim_loop.cmd_to_accel). hover None ise
+    modul HOVER_THRUST'i kullanilir; bench'te MOT_THST_HOVER'a hizala (K2).
     """
+    h = HOVER_THRUST if hover is None else hover
     send_attitude_target(
         master,
         roll_rate=(out.roll / 0.3) * MAX_ROLL_RATE,
-        pitch_rate=(out.pitch / 0.4) * MAX_PITCH_RATE,
+        pitch_rate=PITCH_CMD_SIGN * (out.throttle / 0.3) * MAX_PITCH_RATE,
         yaw_rate=(out.yaw_rate / 0.5) * MAX_YAW_RATE,
-        thrust=HOVER_THRUST + out.throttle,
+        thrust=h + THRUST_CMD_SIGN * (out.pitch / 0.4) * THRUST_AUTHORITY,
     )
 
 
@@ -209,6 +233,30 @@ def get_altitude(master, timeout: float = 1.0):
     if msg:
         return msg.relative_alt / 1000.0
     return None
+
+
+def read_param(master, name: str, timeout: float = 3.0):
+    """Tek bir FC parametresini oku (yoksa None)."""
+    master.mav.param_request_read_send(
+        master.target_system, master.target_component,
+        name.encode("utf-8"), -1)
+    msg = master.recv_match(type="PARAM_VALUE", blocking=True, timeout=timeout)
+    return msg.param_value if msg else None
+
+
+def read_hover_thrust(master):
+    """
+    FC'nin ogrendigi hover gazini (MOT_THST_HOVER) okur ve yazdirir.
+    HOVER_THRUST bu degere hizalanmali (K2). TWR ~4.1 icin ~0.20-0.30 beklenir;
+    0.5 gercekte tirmanis demek olabilir.
+    """
+    v = read_param(master, "MOT_THST_HOVER")
+    if v is not None:
+        print(f"MOT_THST_HOVER = {v:.3f}  ->  HOVER_THRUST'i buna gore ayarla "
+              f"(--hover {v:.2f}); modul varsayilani {HOVER_THRUST}")
+    else:
+        print("MOT_THST_HOVER okunamadi.")
+    return v
 
 
 def request_streams(master, rate_hz: int = 10):
