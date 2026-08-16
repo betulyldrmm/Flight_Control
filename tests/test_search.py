@@ -48,6 +48,35 @@ def test_yeniden_yakalama_temiz_baslar():
     assert c.lost_frames == 0
 
 
+def test_arama_dikey_yukari():
+    # hedef ust yarida goruldu (y_error < 0) -> dikey arama yukari
+    c = TrackingController(reference_area=0.01, coast_frames=1,
+                           search_pitch_rate=0.10)
+    c.compute(_valid(x=0.0, y=-0.4), dt=DT)
+    c.compute(_lost(), dt=DT)
+    o = c.compute(_lost(), dt=DT)
+    assert o.searching
+    assert o.pitch < 0                       # ust yone dikey tarama
+    assert abs(o.pitch) == 0.10
+
+
+def test_arama_dikey_asagi():
+    c = TrackingController(reference_area=0.01, coast_frames=1)
+    c.compute(_valid(x=0.0, y=0.4), dt=DT)   # hedef alt yarida
+    c.compute(_lost(), dt=DT)
+    o = c.compute(_lost(), dt=DT)
+    assert o.searching and o.pitch > 0
+
+
+def test_arama_dikey_bilinmiyorsa_sifir():
+    # hedef tam ortada goruldu (y_error ~ 0) -> dikey yon bilinmiyor, pitch 0
+    c = TrackingController(reference_area=0.01, coast_frames=1)
+    c.compute(_valid(x=0.4, y=0.0), dt=DT)
+    c.compute(_lost(), dt=DT)
+    o = c.compute(_lost(), dt=DT)
+    assert o.searching and o.pitch == 0.0
+
+
 def test_arama_hizi_limitte():
     c = TrackingController(reference_area=0.01, coast_frames=1,
                            search_yaw_rate=0.12)

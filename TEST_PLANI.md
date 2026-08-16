@@ -82,8 +82,10 @@ Emniyet kuralları:
 
 ## Bilinen açık konular
 
-- Arama modu yalnızca yaw taraması yapar; 4. manevradaki 50 m dikey tırmanışta
-  hedef yukarı kaçarsa bulamayabilir (pitch taraması yok — bilinçli tercih, riskli).
+- Arama modu artık yatay (yaw) + dikey (pitch) tarama yapıyor: hedef hangi
+  yönden çıktıysa (sağ/sol ve yukarı/aşağı) o yöne aranır. 4. manevradaki
+  50 m dikey tırmanışta hedef yukarı kaçarsa dikey arama devreye girer.
+  Not: dikey aramanın işaret yönü K1 (THRUST_CMD_SIGN) ile aynı; SITL'de doğrula.
 - `wait_ready` pre-arm bitine bakar; GPS'siz konfigürasyonda bazı kontroller
   kapatılmış olmalı (ARMING_CHECK), yoksa hep uyarı verir.
 - ~~Loglama formatı komiteden gelecek ek dokümanla değişebilir~~ → GELDİ

@@ -24,8 +24,11 @@ TASARIM NOTLARI:
    "Kalman tahmini ile kisa sureli devam" davranisinin basit karsiligi.
 
 5. ARAMA (SEARCH): Coasting suresi de asilirsa, hedefin kadrajdan
-   ciktigi yone dogru yavas bir yaw taramasi yapilir. Pitch/roll/throttle
-   sifir tutulur (yer degistirme yok, sadece donus). Failsafe katmani
+   ciktigi yone dogru yavas bir tarama yapilir. YATAY: son gorulme
+   tarafina yaw (sag/sol). DIKEY: hedef ustten/alttan ciktiysa pitch
+   kanaliyla yukari/asagi tarama (hedef ureten IHA dikeyde de manevra
+   yaptigi icin eklendi). Roll ve throttle (ileri/geri) sifir tutulur.
+   Failsafe katmani
    DATA_TIMEOUT durumunda aramayi iptal eder (main.py) ve 15 sn sonra
    LAND tetiklenir; arama bu sureyle dogal olarak sinirlidir.
 
@@ -117,6 +120,7 @@ class TrackingController:
                  roll_coupling: float = 0.40,
                  coast_frames: int = 15,
                  search_yaw_rate: float = 0.12,
+                 search_pitch_rate: float = 0.10,
                  gain_scale: float = 1.0):
         if reference_area is None:
             if cam is None:
@@ -132,7 +136,9 @@ class TrackingController:
         self.roll_coupling = roll_coupling
         self.coast_frames = coast_frames
         self.search_yaw_rate = search_yaw_rate
-        self._search_dir = 1.0   # hedefin son gorulme yonu (+1 sag, -1 sol)
+        self.search_pitch_rate = search_pitch_rate
+        self._search_dir = 1.0    # yatay son gorulme yonu (+1 sag, -1 sol)
+        self._search_dir_v = 0.0  # dikey son gorulme yonu (+/- ; 0 = bilinmiyor)
 
         # gain_scale: ilk otonom ucusta tum kazanclari toplu kismak icin
         # (orn. 0.5 = yari agresiflik). Kazanclar gercek dronda ayarlanacak;
@@ -179,9 +185,13 @@ class TrackingController:
                 self.pid_throttle.reset()
                 self._last = ControlOutput(0.0, 0.0, 0.0, 0.0)
 
-            # Arama: son gorulme yonune yavas yaw taramasi
+            # Arama: son gorulme yonune yavas tarama.
+            #   yatay -> yaw (sag/sol),  dikey -> pitch kanali (yukari/asagi).
+            # pitch kanali flight_manager'da thrust'a (dikey) gider; dikey
+            # arama boylece K1 isaret sabitlerini otomatik izler.
             return ControlOutput(
-                roll=0.0, pitch=0.0,
+                roll=0.0,
+                pitch=self._search_dir_v * self.search_pitch_rate,
                 yaw_rate=self._search_dir * self.search_yaw_rate,
                 throttle=0.0,
                 searching=True,
@@ -189,9 +199,11 @@ class TrackingController:
 
         self.lost_frames = 0
 
-        # Arama yonu icin hedefin kadraj icindeki tarafini hatirla
+        # Arama yonu icin hedefin kadraj icindeki tarafini hatirla (yatay + dikey)
         if abs(data.x_error) > 0.05:
             self._search_dir = 1.0 if data.x_error > 0 else -1.0
+        if data.y_error is not None and abs(data.y_error) > 0.05:
+            self._search_dir_v = 1.0 if data.y_error > 0 else -1.0
 
         x_err = self._apply_deadband(data.x_error, self.deadband_xy)
         y_err = self._apply_deadband(data.y_error, self.deadband_xy)
