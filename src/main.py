@@ -158,7 +158,8 @@ TARGETS = {
 def run(source_name: str, target_name: str,
         takeoff_alt: float = 5.0, duration: Optional[float] = None,
         desired_distance: float = 4.0, log_dir: str = "logs",
-        gain_scale: float = 1.0):
+        gain_scale: float = 1.0, handover: bool = False,
+        lock_frames: int = 5):
 
     print(f"Kamera: {CAM}")
     print(f"Hedef takip mesafesi: {desired_distance} m "
@@ -179,7 +180,14 @@ def run(source_name: str, target_name: str,
     logger = FlightLogger(log_dir).start()
     fs = FailsafeMonitor(master) if master else None
 
-    if master:
+    if master and handover:
+        # HANDOVER: pilot manuel kalkti ve dronu havada devretti.
+        # Arm ve kalkis YOK; sadece otonom moda gecip mevcut ucusa katiliyoruz.
+        print("HANDOVER modu: mevcut ucusa katiliniyor "
+              "(arm ve kalkis atlandi).")
+        fm.set_mode(master, "GUIDED_NOGPS")
+
+    elif master:
         if not wait_ready(master, timeout=20.0):
             print("UYARI: pre-arm saglik biti dogrulanamadi, devam ediliyor.")
         fm.set_mode(master, "GUIDED_NOGPS")
@@ -222,6 +230,14 @@ def run(source_name: str, target_name: str,
     if fs:
         fs.reset()
 
+    # Kilitlenme kapisi: takibe baslamadan once hedefin stabil gorulmesini bekle.
+    # Sartname: "hedefe kilitlenecek ve otonom moda gececek". lock_frames<=0 ise kapali.
+    locked = (lock_frames <= 0)
+    lock_count = 0
+    if not locked:
+        print(f"Kilitlenme bekleniyor: {lock_frames} kare stabil hedef "
+              f"(o ana kadar hover).")
+
     print("\nOtonom takip basladi. Ctrl+C ile durdur.\n")
     src = SOURCES[source_name]()
     loop_t0 = time.time()
@@ -263,6 +279,20 @@ def run(source_name: str, target_name: str,
             data = TrackingData.lost(time.time() - loop_t0)
         out = ctrl.compute(data, dt=dt)
 
+        # Kilitlenme kapisi: stabil hedef gorene kadar takip komutu uretme (hover).
+        # Kilitlendikten sonra hedef kaybi normal (coasting/arama) ile yonetilir.
+        if not locked:
+            if target_ok:
+                lock_count += 1
+                if lock_count >= lock_frames:
+                    locked = True
+                    print(f"KILITLENILDI ({lock_frames} kare stabil hedef) -> "
+                          f"otonom takip basliyor.")
+            else:
+                lock_count = 0
+            if not locked:
+                out = ZERO_OUTPUT   # kilitlenene kadar hover
+
         if fs and fs.should_hover():
             # Coasting'e her durumda izin ver. Aramaya yalnizca hedef
             # kaybinda izin ver; veri kesintisinde (DATA_TIMEOUT) korle
@@ -288,9 +318,14 @@ def run(source_name: str, target_name: str,
             bbox = f"{data.bbox_px:.0f}px" if data.bbox_px else "yok"
             att = fm.get_attitude(master, timeout=0.1) if master else None
             yaw_s = f"arac_yaw={math.degrees(att[2]):+6.1f}" if att else ""
-            print(f"t={now:5.1f}s  {data.durum:<12} bbox={bbox:>8}  "
-                  f"yaw_cmd={out.yaw_rate:+.3f} thr={out.throttle:+.3f}  "
-                  f"{yaw_s}  {fs.status() if fs else ''}")
+            mod = ("KILITLENIYOR" if not locked else
+                   "ARIYOR" if out.searching else
+                   "COAST" if out.coasting else data.durum)
+            # Etiketler K1 sonrasi fiziksel karsiliga gore:
+            #   yaw=donus, mesafe=ileri/geri (throttle), dikey=yukari/asagi (pitch)
+            print(f"t={now:5.1f}s  {mod:<12} bbox={bbox:>8}  "
+                  f"yaw={out.yaw_rate:+.3f} mesafe={out.throttle:+.3f} "
+                  f"dikey={out.pitch:+.3f}  {yaw_s}  {fs.status() if fs else ''}")
 
     # Kapanis
     if master:
@@ -320,6 +355,10 @@ def main():
                    help="HOVER_THRUST override; MOT_THST_HOVER'a hizala (K2)")
     p.add_argument("--gain-scale", type=float, default=1.0,
                    help="tum PID kazanclarini olcekle; ilk ucusta 0.4-0.6 onerilir")
+    p.add_argument("--handover", action="store_true",
+                   help="pilot manuel kalkti; arm/kalkis atla, mevcut ucusa katil")
+    p.add_argument("--lock-frames", type=int, default=5,
+                   help="takibe baslamadan once kac kare stabil hedef beklensin (0=kapali)")
     args = p.parse_args()
 
     global CAM
@@ -329,7 +368,8 @@ def main():
         print(f"HOVER_THRUST override: {args.hover}")
 
     run(args.source, args.target, args.alt, args.duration, args.dist,
-        gain_scale=args.gain_scale)
+        gain_scale=args.gain_scale, handover=args.handover,
+        lock_frames=args.lock_frames)
 
 
 if __name__ == "__main__":
