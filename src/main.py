@@ -159,7 +159,7 @@ def run(source_name: str, target_name: str,
         takeoff_alt: float = 5.0, duration: Optional[float] = None,
         desired_distance: float = 4.0, log_dir: str = "logs",
         gain_scale: float = 1.0, handover: bool = False,
-        lock_frames: int = 5):
+        lock_frames: int = 5, auto_takeoff: bool = False):
 
     print(f"Kamera: {CAM}")
     print(f"Hedef takip mesafesi: {desired_distance} m "
@@ -186,6 +186,19 @@ def run(source_name: str, target_name: str,
         print("HANDOVER modu: mevcut ucusa katiliniyor "
               "(arm ve kalkis atlandi).")
         fm.set_mode(master, "GUIDED_NOGPS")
+
+    elif master and not auto_takeoff:
+        # GUVENLIK KILIDI (HIGH-1): FC'ye bagliyiz ama ne --handover ne
+        # --auto-takeoff verildi. Yanlislikla yerde/manuel ucusta calistirma
+        # riskine karsi HICBIR kontrol komutu gondermeden cikilir.
+        # Arm/kalkis icin ACIKCA --auto-takeoff, mevcut ucusa katilmak icin
+        # --handover gerekir.
+        print("GUVENLIK: --handover veya --auto-takeoff belirtilmedi. "
+              "FC'ye kontrol/arm/kalkis komutu GONDERILMEYECEK. Cikiliyor.\n"
+              "  Otonom kalkis icin:  --auto-takeoff\n"
+              "  Mevcut ucusa katil:  --handover")
+        logger.close()
+        return
 
     elif master:
         if not wait_ready(master, timeout=20.0):
@@ -357,6 +370,8 @@ def main():
                    help="tum PID kazanclarini olcekle; ilk ucusta 0.4-0.6 onerilir")
     p.add_argument("--handover", action="store_true",
                    help="pilot manuel kalkti; arm/kalkis atla, mevcut ucusa katil")
+    p.add_argument("--auto-takeoff", action="store_true",
+                   help="GUVENLIK: otonom arm+kalkis SADECE bu bayrakla yapilir")
     p.add_argument("--lock-frames", type=int, default=5,
                    help="takibe baslamadan once kac kare stabil hedef beklensin (0=kapali)")
     args = p.parse_args()
@@ -369,7 +384,7 @@ def main():
 
     run(args.source, args.target, args.alt, args.duration, args.dist,
         gain_scale=args.gain_scale, handover=args.handover,
-        lock_frames=args.lock_frames)
+        lock_frames=args.lock_frames, auto_takeoff=args.auto_takeoff)
 
 
 if __name__ == "__main__":
