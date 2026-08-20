@@ -25,7 +25,8 @@ import time
 from typing import Iterator, Optional
 
 from src.camera import (CAM_720P_40, CAM_720P_50, CAM_720P_70,
-                        CAM_1080P_50, CameraModel)
+                        CAM_1080P_50, CAM_RPI_V1, CAM_RPI_V2, CAM_RPI_V3,
+                        CameraModel)
 from src.connection import connect, send_gcs_heartbeat, wait_ready
 from src import flight_manager as fm
 from src.failsafe import FailsafeMonitor, FailsafeState
@@ -47,6 +48,8 @@ TAKEOFF_RAMP_S = 2.0         # deltaya ulasma suresi (sn)
 CAMERAS = {
     "720p40": CAM_720P_40, "720p50": CAM_720P_50,
     "720p70": CAM_720P_70, "1080p50": CAM_1080P_50,
+    # Raspberry Pi kamera (Jetson takip kamerasi) - surumu dogrula
+    "rpi_v1": CAM_RPI_V1, "rpi_v2": CAM_RPI_V2, "rpi_v3": CAM_RPI_V3,
 }
 CAM: CameraModel = CAM_720P_40
 

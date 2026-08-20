@@ -89,4 +89,14 @@ CAM_720P_50 = CameraModel(1280, 720, 50)     # max 6.4 m
 CAM_720P_40 = CameraModel(1280, 720, 40)     # max 8.2 m
 CAM_1080P_50 = CameraModel(1920, 1080, 50)   # max 9.7 m
 
+# Raspberry Pi Kamera (Jetson'a takilan takip kamerasi).
+# FOV kamera surumune gore degisir -> KESIN FOV TAKIMDAN DOGRULANMALI:
+#   Pi Cam v1 (OV5647): ~54 derece
+#   Pi Cam v2 (IMX219): ~62 derece   <-- asagidaki varsayim
+#   Pi Cam v3 (IMX708): ~66 (geniS aci surumu 102)
+# 1280x720 @ 62 derece -> 64px sartini saglayabilecegimiz max menzil ~5.0 m.
+CAM_RPI_V1 = CameraModel(1280, 720, 54)      # Pi Cam v1
+CAM_RPI_V2 = CameraModel(1280, 720, 62)      # Pi Cam v2 (IMX219) - varsayim
+CAM_RPI_V3 = CameraModel(1280, 720, 66)      # Pi Cam v3
+
 DEFAULT_CAM = CAM_720P_70

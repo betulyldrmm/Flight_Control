@@ -35,7 +35,8 @@ MAX_ROLL_RATE = math.radians(90.0)    # rad/s
 MAX_PITCH_RATE = math.radians(90.0)
 MAX_YAW_RATE = math.radians(120.0)
 
-HOVER_THRUST = 0.5                    # itki/agirlik ~4.1 icin kaba baslangic
+HOVER_THRUST = 0.31                   # param dosyasindan: ogrenilen MOT_THST_HOVER
+                                     # (--hover ile ezilebilir; gercek dronda dogrula)
 THRUST_MIN, THRUST_MAX = 0.20, 0.80   # guvenlik siniri
 
 # Rate kontrolu: yalnizca quaternion yoksayilir
