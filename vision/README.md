@@ -45,7 +45,7 @@ python -m src.main --source socket --target sitl       # SITL'de uçur
 
 ## YOLO Modeli Entegrasyonu
 
-Modül hazır; Sercan sadece eğittiği modeli `--model` ile verir:
+Modül hazır;sadece eğittiği modeli `--model` ile verir:
 ```
 python -m vision.run --source webcam --model runs/detect/train/weights/best.pt
 ```
