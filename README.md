@@ -1,6 +1,4 @@
-cd C:\Users\HP\Flight_Control
 
-@'
 # Flight Control — TEKNOFEST FPV Drone Tracking
 
 ## Proje Hakkında
