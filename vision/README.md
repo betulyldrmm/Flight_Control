@@ -1,4 +1,4 @@
-# vision/ — Görüntü İşleme ve Hedef Takip (Sercan tarafı)
+﻿# vision/ — Görüntü İşleme ve Hedef Takip 
 
 Uçuş kontrol koduyla (`src/`) **birebir uyumlu** çalışan görüntü işleme modülü.
 
@@ -43,7 +43,7 @@ python -m src.main --source socket --target none      # sadece PID çıktısı
 python -m src.main --source socket --target sitl       # SITL'de uçur
 ```
 
-## Sercan'ın yapması gereken tek şey: YOLO modelini takmak
+## YOLO Modeli Entegrasyonu
 
 Modül hazır; Sercan sadece eğittiği modeli `--model` ile verir:
 ```
@@ -74,3 +74,4 @@ Renk tespiti yerine YOLO otomatik devreye girer. Model sınıf filtresi gerekirs
 - **KCF** yalnızca `opencv-contrib-python` ile gelir. Yoksa modül çökmez; her karede tespit + Kalman'a düşer. Jetson'da contrib kuruluysa KCF otomatik açılır.
 - **5 Hz şartı:** Her kareyi diske kaydetmek yavaştır; loglama hızı 5/sn altına düşerse `save_ext="jpg"` (küçük dosya) yeterli, gerekirse Jetson'da donanım hızlandırma. Kayıt hızını `teslim` doğrulamasıyla kontrol et.
 - `teslim/` klasörü bir çalıştırmanın çıktısıdır; git'e eklemene gerek yok.
+
